@@ -252,7 +252,7 @@ clone(void *stack, int size, void (*routine)(void*), void *arg)
     np->sz = curproc->sz;
     np->parent = curproc;
     *np->tf = *curproc->tf;
-    
+
     // Setup stack
     np->mystack=stack;
     uint stackpointer=(uint)stack+size;
@@ -298,7 +298,7 @@ exit(void)
   if(curproc == initproc)
     panic("init exiting");
 
-  //cprintf("exiti 1\n");
+    acquire(&ptable.lock);
     *(curproc->threadnumfile)-=1;
   if(*(curproc->threadnumfile)==0){
       // Close all open files.
@@ -309,6 +309,7 @@ exit(void)
           }
       }
   }
+    release(&ptable.lock);
 
 
   begin_op();
@@ -358,6 +359,7 @@ wait(void)
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
+          *(p->threadnummem)-=1;
         if(*(p->threadnummem)==0)
             freevm(p->pgdir);
         p->pid = 0;
