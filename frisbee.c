@@ -6,6 +6,7 @@
 
 #define PGSIZE 4096
 typedef uint lock_t;
+int useless=0;
 int nowtid;
 int tnum=0;
 int starttid=-1;
@@ -103,5 +104,11 @@ int main(int argc, char *argv[])
     }
     nowtid=tids[0];
     lock_release(mylock);
+
+    while(pass<=finalpass){
+        printf(1,"");
+    }
+    printf(1,"Simulation of Frisbee game has finished, %d rounds were played in total!\n",passnum);
+
     exit();
 }
