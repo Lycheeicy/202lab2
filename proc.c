@@ -252,18 +252,16 @@ clone(void *stack, int size, void (*routine)(void*), void *arg)
     np->sz = curproc->sz;
     np->parent = curproc;
     *np->tf = *curproc->tf;
-
+    
     // Setup stack
     np->mystack=stack;
     uint stackpointer=(uint)stack+size;
     np->tf->ebp=stackpointer;
-    uint stackpara[2];
-    stackpara[0]=0xffffffff;
-    stackpara[1]=(uint)arg;
+    *(uint*)(stackpointer-8)=0xffffffff;
+    *(uint*)(stackpointer-4)=(uint)arg;
     np->tf->esp=stackpointer-8;
     np->tf->eip=(uint)routine;
-    if (copyout(np->pgdir, stackpointer-8, stackpara, 8) < 0)
-        return -1;
+
 
     // Clear %eax so that fork returns 0 in the child.
     np->tf->eax = 0;
