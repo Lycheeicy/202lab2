@@ -90,8 +90,11 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-  p->threadnum=(int*)kalloc();
-  *(p->threadnum)=0;
+  p->threadnumfile=(int*)kalloc();
+  *(p->threadnumfile)=0;
+    p->threadnummem=(int*)kalloc();
+    *(p->threadnummem)=0;
+  p->mystack=0;
 
   release(&ptable.lock);
 
@@ -225,11 +228,97 @@ fork(void)
   return pid;
 }
 
+/*
+// his clone
+int
+clone(void *stack, int size, void (*func)(void*), void *arg){
+    int i, pid;
+    struct proc *np;
+    struct proc *currproc = myproc();
 
+
+
+    // Allocate process.
+    if((np = allocproc()) == 0){
+        return -1;
+    }
+// Set counter
+    np->threadnumfile=currproc->threadnumfile;
+    *(np->threadnumfile)+=1;
+    np->threadnummem=currproc->threadnummem;
+    *(np->threadnummem)+=1;
+    if ((uint)stack % PGSIZE != 0 || stack == 0)
+        return -1;
+
+    // step 1: share the same address space with parent
+    np->state = UNUSED;
+    np->sz = currproc->sz;
+    np->parent = currproc;
+    *np->tf = *currproc->tf;
+    np->pgdir = currproc->pgdir;
+
+    np->tf->eip = (uint)func; // set instruction pointer
+    np->tf->eax = 0;          // clear %eax so that fork returns 0 in the child.
+
+    // step 2: use the same file descriptor
+    for (i = 0; i < NOFILE; i++)
+        if (currproc->ofile[i])
+            np->ofile[i] = filedup(currproc->ofile[i]);
+    np->cwd = idup(currproc->cwd);
+
+    safestrcpy(np->name, currproc->name, sizeof(currproc->name));
+
+    acquire(&ptable.lock);
+    uint ustack[2];
+    ustack[0] = 0xffffffff;  // fake return PC
+    ustack[1] = (uint)arg;
+
+    // test
+    np->tf->esp = (uint)(stack+PGSIZE - 4); //put esp to right spot on stack
+    *((uint*)(np->tf->esp)) = (uint)arg; //arg to function
+    *((uint*)(np->tf->esp) - 4) = 0xFFFFFFFF; //return to nowhere
+    np->tf->esp =(np->tf->esp) - 4;
+    if (copyout(np->pgdir, np->tf->esp, ustack, size) < 0) {
+        cprintf("Stack copy failed.\n");
+        return -1;
+    }
+
+    np->state = RUNNABLE;
+
+    // step 3: switch user stack
+    // uint ustack[2];
+    // uint sp;
+    // ustack[0] = 0xffffffff;  // fake return PC
+    // ustack[1] = (uint)arg;
+
+    // sp = (uint)stack + PGSIZE;
+    // sp -= 2*4;
+    // if (copyout(np->pgdir, sp, ustack, 8) < 0) {
+    //   cprintf("Stack copy failed.\n");
+    //   return -1;
+    // }
+
+    // np->tf->esp = sp;
+    np->tf->ebp = currproc->tf->esp;  // set base pointer
+
+    pid = np->pid;
+    release(&ptable.lock);
+
+    return pid;
+}
+ */
 
 int
 clone(void *stack, int size, void (*routine)(void*), void *arg)
 {
+    /*
+    //his
+    if ((uint)stack % PGSIZE != 0 || (uint)stack + PGSIZE > *(myproc()->sz)) {
+        return -1;
+    }
+    */
+
+    //cprintf("cloning\n");
     int i, pid;
     struct proc *np;
     struct proc *curproc = myproc();
@@ -240,22 +329,93 @@ clone(void *stack, int size, void (*routine)(void*), void *arg)
     }
 
     // Set counter
-    np->threadnum=curproc->threadnum;
-    *(np->threadnum)+=1;
+    np->threadnumfile=curproc->threadnumfile;
+    *(np->threadnumfile)+=1;
+    np->threadnummem=curproc->threadnummem;
+    *(np->threadnummem)+=1;
 
-    // Setup stack
-    np->kstack=stack;
+
+    /*
+    //his
+    np->mystack = stack;
+    *((uint*)(stack + PGSIZE - sizeof(uint))) = (uint)arg;
+    *((uint*)(stack + PGSIZE - 2 * sizeof(uint))) = 0xffffffff;
+    np->tf->esp = (uint)stack + PGSIZE - 2 * sizeof(uint);
+    np->tf->eip = (uint)routine;
+    */
+    //his
+
+
+    /*
+    //his
+    np->mystack = stack;
+    np->tf->esp = (uint)stack + PGSIZE ;
+    *((uint*)(np->tf->esp)) = (uint)arg;
+    *((uint*)(np->tf->esp-4)) = 0xffffffff;
+    np->tf->esp-=4;
+
+    np->tf->eip = (uint)routine;
+    */
+    /*
+    //his
+    //setting the new stack
+    uint stack_top = (uint) stack + size;
+    uint user_stack[2];  //decalring arrray of 3 elements
+
+    user_stack[0]= 0xffffffff ;  //fake return address for thread's stack(first address in stack which base ponter points to)
+    user_stack[1]= (uint) arg ; //first arg
+
+    stack_top-=8; //cause we will push 3 elements in the stack
+
+// copying 12 bytes from the arry user_stack into memory location stack_top(offset) in the newp->pgdir
+    if(copyout(np->pgdir , stack_top , user_stack ,8) < 0) return -1;
+
+//setting base and stack pointers for the return from trap
+//they will be the same because we are returning into function
+//setting instruction pointer to the address of the function that the thread will do
+    np->tf->ebp = (uint) stack_top;
+    np->tf->esp = (uint) stack_top;
+    np->tf->eip = (uint) routine;
+    np->mystack=stack;
+    */
+    ///*
+
+
+    /*
     uint *stackpointer=stack+size;
-    *(stackpointer-2)=0xffffffff;
-    np->tf->esp=(uint)stackpointer-2;
-    *(stackpointer-1)=(uint)arg;
+    *(stackpointer-4)=0xffffffff;
+    //cprintf("size of uint is %d\n",sizeof(uint));
+    np->tf->esp=(uint)(stackpointer-4);//-2*sizeof(uint);
+    *(stackpointer)=(uint)arg;
+    //np->tf->ebp=(uint)(stackpointer-4);
     np->tf->eip=(uint)routine;
+     */
+    //if (copyout(np->pgdir, np->tf->esp, stack, size) < 0) {
+    //    cprintf("Stack copy failed.\n");
+    //    return -1;
+    //}
+    //np->tf->ebp=np->tf->esp;
+    //*/
+
 
     // Copy process state from proc.
-    np->pgdir=curproc->pgdir;
+    np->pgdir =curproc->pgdir;
     np->sz = curproc->sz;
     np->parent = curproc;
     *np->tf = *curproc->tf;
+
+    // Setup stack
+    np->mystack=stack;
+    //cprintf("size is %d\n",size);
+    uint stackpointer=(uint)stack+size;
+    np->tf->ebp=stackpointer;
+    uint stackpara[2];
+    stackpara[0]=0xffffffff;
+    stackpara[1]=(uint)arg;
+    np->tf->esp=stackpointer-8;
+    np->tf->eip=(uint)routine;
+    if (copyout(np->pgdir, stackpointer-8, stackpara, 8) < 0)
+        return -1;
 
     // Clear %eax so that fork returns 0 in the child.
     np->tf->eax = 0;
@@ -274,14 +434,14 @@ clone(void *stack, int size, void (*routine)(void*), void *arg)
     np->state = RUNNABLE;
 
     release(&ptable.lock);
-
+    //cprintf("finish clone\n");
     return pid;
 }
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
 void
-exit(void)
+oldexit(void)
 {
     struct proc *curproc = myproc();
     struct proc *p;
@@ -328,8 +488,9 @@ exit(void)
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
 void
-newexit(void)
+exit(void)
 {
+    //cprintf("exiting %d with threadnum %d\n",myproc()->pid,*(myproc()->threadnumfile));
   struct proc *curproc = myproc();
   struct proc *p;
   int fd;
@@ -337,8 +498,9 @@ newexit(void)
   if(curproc == initproc)
     panic("init exiting");
 
-  //cprintf("here");
-  if(*(curproc->threadnum)==0){
+  //cprintf("exiti 1\n");
+    *(curproc->threadnumfile)-=1;
+  if(*(curproc->threadnumfile)==0){
       // Close all open files.
       for(fd = 0; fd < NOFILE; fd++){
           if(curproc->ofile[fd]){
@@ -353,7 +515,7 @@ newexit(void)
   iput(curproc->cwd);
   end_op();
   curproc->cwd = 0;
-
+    //cprintf("exiti 2\n");
   acquire(&ptable.lock);
 
   // Parent might be sleeping in wait().
@@ -367,7 +529,7 @@ newexit(void)
         wakeup1(initproc);
     }
   }
-
+    //cprintf("exiti 3\n");
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();
@@ -377,7 +539,7 @@ newexit(void)
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
-wait(void)
+oldwait(void)
 {
     struct proc *p;
     int havekids, pid;
@@ -421,12 +583,13 @@ wait(void)
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
-newwait(void)
+wait(void)
 {
+
   struct proc *p;
   int havekids, pid;
   struct proc *curproc = myproc();
-  
+  //cprintf("%d is waiting\n",curproc->pid);
   acquire(&ptable.lock);
   for(;;){
     // Scan through table looking for exited children.
@@ -437,10 +600,11 @@ newwait(void)
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
+        //cprintf("in waiting, found one with threadnum %d, pid %d\n",*(p->threadnummem),p->pid);
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
-        if(*(p->threadnum)==0)
+        if(*(p->threadnummem)==0)
             freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
@@ -448,7 +612,8 @@ newwait(void)
         p->killed = 0;
         p->state = UNUSED;
         release(&ptable.lock);
-        *(p->threadnum)-=1;
+        *(p->threadnummem)-=1;
+        //cprintf("finish wait and get pid %d\n",pid);
         return pid;
       }
     }

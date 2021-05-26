@@ -6,57 +6,79 @@
 
 #define PGSIZE 4096
 typedef uint lock_t;
-
 int nowtid;
-int pass=1;
-int* tids;
 int tnum=0;
+int starttid=-1;
+static int tids[50];
+void ** stacks;
+ int pass=1;
+ int finalpass=-1;
+int donet=0;
 lock_t *mylock;
  void
  lock_init(lock_t *lock){
-     lock=(uint*)malloc(sizeof(uint));
+
      *lock=0;
  }
 
  void
  lock_acquire(lock_t *lock){
-     while(xchg(lock, 1) != 0)
-         ;
+     while(xchg(lock, 1) != 0);
+
  }
 
  void
  lock_release(lock_t *lock){
      *lock=0;
  }
-void routine(void * arg){
-     printf(1,"this is thread %d\n",getpid());
-     /*
-    while(nowtid!=getpid());
+ int
+ getpidpos(){
+     int i=0;
+     for(;i<tnum;i++){
+         if(tids[i]==getpid())
+             return i;
+     }
+     return -1;
+ }
+void routine(){
+    while(pass<=finalpass){
+        if(nowtid!=getpid())    continue;
+        lock_acquire(mylock);
+        if(pass>finalpass){
+            lock_release(mylock);
+            break;
+        }
+        printf(2,"Pass number no: %d, Thread %d is passing the token to thread %d\n",pass,getpid(),tids[(pass)%tnum]);
 
-    lock_acquire(mylock);
-    int nexttid=tids[(pass-1)%tnum];
-    printf(3,"Pass number no: %d, Thread %d is passing the token to thread %d",pass,getpid(),nexttid);
-    pass++;
-    nowtid=nexttid;
-    lock_release(mylock);
-      */
+        nowtid=tids[(pass)%tnum];
+        pass++;
+        lock_release(mylock);
+    }
+
+
+     free(stacks[getpidpos()]);
+     donet++;
     exit();
 }
 
 int
-thread_create(void (*routine) (void *), void *arg)
+thread_create(void (*routine) (void *), void *arg,int pos)
 {
     int tid;
-    char* stack;
 
-    // Allocate stack.
-    if((stack = malloc(PGSIZE)) == 0){
+    // Allocate stack
+    void *stack;
+    if((stack = malloc(PGSIZE*2)) == 0){
         return -1;
+    }
+    stacks[pos]=stack;
+
+    if((uint)stack % PGSIZE) {
+        stack = stack + (PGSIZE - (uint)stack % PGSIZE);
     }
 
     // Call clone and return thread ID
     tid=clone(stack,PGSIZE,routine,arg);
-
     return tid;
 }
 
@@ -64,18 +86,20 @@ thread_create(void (*routine) (void *), void *arg)
 
 int main(int argc, char *argv[])
 {
+    mylock=(uint*)malloc(sizeof(uint));
     lock_init(mylock);
     int threadnum=atoi(argv[1]);
     tnum=threadnum;
     int passnum=atoi(argv[2]);
-    printf(2, "threadnum:%d passnum:%d\n", threadnum,passnum);
-    tids=(int*)malloc(threadnum*sizeof(int));
+    finalpass=passnum;
+    stacks=(void**)malloc(threadnum*sizeof(void*));
+
     lock_acquire(mylock);
     int i=0;
     for(i=0;i<threadnum;i++){
-        int temp=1;
+        int temp=i;
         void *arg=&temp;
-        tids[i]=thread_create(routine,arg);
+        tids[i]=thread_create(routine,arg,i);
     }
     nowtid=tids[0];
     lock_release(mylock);
